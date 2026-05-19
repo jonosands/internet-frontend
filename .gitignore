@@ -1,0 +1,10 @@
+# Never commit private keys or certs
+certs/**/*.pem
+certs/**/*.key
+certs/**/*.crt
+certs/**/*.p12
+certs/**/*.pfx
+
+# Keep the certs directory structure
+!certs/.gitkeep
+!certs/*/.gitkeep
