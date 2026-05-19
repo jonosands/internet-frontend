@@ -14,6 +14,7 @@ services:
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./certs:/etc/nginx/certs:ro
       - certbot-webroot:/var/www/certbot:ro
+      - ./hosts:/etc/hosts:ro
     networks:
       - frontend
     depends_on: []
