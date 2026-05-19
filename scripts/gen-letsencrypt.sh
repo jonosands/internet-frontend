@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Obtain a Let's Encrypt certificate for a hostname using the webroot method.
+# Works for both nginx vhosts and the coturn TURN server domain.
 # The nginx container must be running (to serve the ACME challenge on port 80).
-# Usage: ./scripts/gen-letsencrypt.sh <hostname> <email>
+#
+# Usage:   ./scripts/gen-letsencrypt.sh <hostname> <email>
 # Example: ./scripts/gen-letsencrypt.sh app1.example.com admin@example.com
+#          ./scripts/gen-letsencrypt.sh turn.example.com admin@example.com
 
 set -euo pipefail
 
@@ -10,20 +13,23 @@ HOSTNAME="${1:?Usage: $0 <hostname> <email>}"
 EMAIL="${2:?Usage: $0 <hostname> <email>}"
 
 # Certbot writes certs into ./certs/live/<hostname>/
-docker compose run --rm certbot certbot certonly \
+docker compose run --rm --no-deps certbot certonly \
   --webroot \
   --webroot-path /var/www/certbot \
   --email "${EMAIL}" \
   --agree-tos \
   --no-eff-email \
-  --domains "${HOSTNAME}" \
-  --cert-path /etc/letsencrypt/live/${HOSTNAME}/fullchain.pem \
-  --key-path  /etc/letsencrypt/live/${HOSTNAME}/privkey.pem
+  --domains "${HOSTNAME}"
 
 echo ""
-echo "Certificate issued. Update nginx conf to point at:"
+echo "Certificate issued at: ./certs/live/${HOSTNAME}/"
+echo ""
+echo "For nginx vhosts, update conf to point at:"
 echo "  /etc/nginx/certs/live/${HOSTNAME}/fullchain.pem"
 echo "  /etc/nginx/certs/live/${HOSTNAME}/privkey.pem"
+echo "Then reload: docker compose exec nginx nginx -s reload"
 echo ""
-echo "Then reload nginx:"
-echo "  docker compose exec nginx nginx -s reload"
+echo "For coturn, update coturn/turnserver.conf to:"
+echo "  cert=/etc/coturn/certs/live/${HOSTNAME}/fullchain.pem"
+echo "  pkey=/etc/coturn/certs/live/${HOSTNAME}/privkey.pem"
+echo "Then restart: docker compose restart coturn"

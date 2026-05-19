@@ -35,7 +35,12 @@ services:
     volumes:
       - ./certs:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
-    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
+      # Docker socket allows the deploy hook to restart coturn after renewal.
+      # This gives certbot root-equivalent access to the host — acceptable on a
+      # dedicated frontend server; remove if your threat model requires isolation.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /usr/bin/docker:/usr/bin/docker:ro
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --deploy-hook 'docker restart internet-frontend-coturn' --quiet; sleep 12h & wait $${!}; done"
     profiles:
       - letsencrypt
 
