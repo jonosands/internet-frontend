@@ -16,6 +16,19 @@ services:
       - frontend
     depends_on: []
 
+  coturn:
+    image: coturn/coturn:latest
+    container_name: internet-frontend-coturn
+    restart: unless-stopped
+    # network_mode: host gives coturn direct access to real network interfaces
+    # so it can detect its public IP and bind UDP correctly.
+    # This is the most reliable mode for TURN servers.
+    network_mode: host
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ./certs:/etc/coturn/certs:ro
+    command: -c /etc/coturn/turnserver.conf
+
   certbot:
     image: certbot/certbot:latest
     container_name: internet-frontend-certbot

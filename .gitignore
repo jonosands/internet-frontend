@@ -8,3 +8,7 @@ certs/**/*.pfx
 # Keep the certs directory structure
 !certs/.gitkeep
 !certs/*/.gitkeep
+
+# Secrets
+.env
+coturn/.env
