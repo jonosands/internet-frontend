@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
 # Obtain a Let's Encrypt certificate for a hostname using the webroot method.
-# Works for both nginx vhosts and the coturn TURN server domain.
 # The nginx container must be running (to serve the ACME challenge on port 80).
 #
 # Usage:   ./scripts/gen-letsencrypt.sh <hostname> <email>
 # Example: ./scripts/gen-letsencrypt.sh app1.example.com admin@example.com
-#          ./scripts/gen-letsencrypt.sh turn.example.com admin@example.com
 
 set -euo pipefail
 
@@ -28,8 +26,3 @@ echo "For nginx vhosts, update conf to point at:"
 echo "  /etc/nginx/certs/live/${HOSTNAME}/fullchain.pem"
 echo "  /etc/nginx/certs/live/${HOSTNAME}/privkey.pem"
 echo "Then reload: docker compose exec nginx nginx -s reload"
-echo ""
-echo "For coturn, update coturn/turnserver.conf to:"
-echo "  cert=/etc/coturn/certs/live/${HOSTNAME}/fullchain.pem"
-echo "  pkey=/etc/coturn/certs/live/${HOSTNAME}/privkey.pem"
-echo "Then restart: docker compose restart coturn"

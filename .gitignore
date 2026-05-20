@@ -11,4 +11,3 @@ certs/**/*.pfx
 
 # Secrets
 .env
-coturn/.env

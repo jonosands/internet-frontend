@@ -1,6 +1,6 @@
 # internet-frontend
 
-nginx reverse proxy that terminates HTTPS from clients and re-encrypts to internal backend servers (SSL bridging). Includes a coturn TURN server for WebRTC media relay, shared across all backends.
+nginx reverse proxy that terminates HTTPS from clients and re-encrypts to internal backend servers (SSL bridging).
 
 ## Structure
 
@@ -13,9 +13,6 @@ internet-frontend/
 │   └── snippets/
 │       ├── ssl-params.conf   # TLS settings (shared)
 │       └── proxy-params.conf # Proxy headers + SSL re-encrypt settings
-├── coturn/
-│   ├── turnserver.conf       # coturn config (shared by all WebRTC backends)
-│   └── .env.example          # TURN_SECRET template — copy to .env
 ├── certs/                    # Certs go here — never committed to git
 │   └── <hostname>/
 │       ├── fullchain.pem
@@ -67,61 +64,55 @@ Certbot will attempt renewal every 12 hours. Certificates are stored in `./certs
 2. Add a cert for that hostname
 3. Reload nginx
 
+## Blackholing and logging
+
+### Philosophy
+
+Vhosts use nginx's `return 444` (connection close, no response) to drop traffic that has no legitimate reason to reach the backend. The goal is to protect backends from scanner noise and accidental exposure of paths that should never be reachable through this proxy.
+
+Two patterns are used depending on how locked-down the vhost needs to be:
+
+**Explicit extension block** (used by hf.ignition.net.nz): Allow all paths through except known scanner bait — `.php`, `.asp`, `.aspx`, `.cgi`, `.env`, `.git`. These extensions are never served by the backend and only appear in automated scans. Everything else proxies normally.
+
+```nginx
+location ~* \.(php|asp|aspx|cgi|env|git)$ {
+    access_log /var/log/nginx-custom/hf-blackhole.log blackhole;
+    return 444;
+}
+```
+
+**Default-deny catch-all** (used by ice and landsar): Explicitly whitelist every legitimate path, then blackhole the default `location /` block. Anything not in the whitelist is dropped. This is appropriate for backends with a small, well-defined URL surface (e.g. a Flutter SPA with a fixed set of entry points).
+
+```nginx
+location / {
+    access_log /var/log/nginx-custom/ice-blackhole.log blackhole;
+    return 444;
+}
+```
+
+### Log format
+
+A dedicated `blackhole` log format is defined in `nginx.conf` and written to `/var/log/nginx-custom/<vhost>-blackhole.log`. It captures IP, timestamp, request line, User-Agent, Referer, and Origin — enough to identify scanner campaigns and see whether anything legitimate is getting caught.
+
+```
+$remote_addr [$time_local] "$request" ua="$http_user_agent" ref="$http_referer" origin="$http_origin"
+```
+
+The main access log uses the `main` format (which also includes `upstream` and `host`) and goes to the standard nginx log inside the container.
+
+### Discovery workflow
+
+When adding a new vhost or tightening an existing one, use the access logs to observe before blocking:
+
+1. Deploy the vhost with `return 444` in place but watch the blackhole log: `docker compose exec nginx tail -f /var/log/nginx-custom/<vhost>-blackhole.log`
+2. If legitimate traffic appears there, add an explicit `location` block for that path above the blackhole rule.
+3. Once the blackhole log is quiet for normal usage, the rule is correctly scoped.
+
+The inline comment `# Swap return 444 for proxy_pass during discovery to observe before blocking` in vhost configs marks where this swap should happen.
+
 ## SSL bridging notes
 
 - nginx terminates the client TLS connection using certs in `certs/<hostname>/`
 - Outbound connections to backends use HTTPS
 - Backend SSL verification is **disabled by default** (`proxy_ssl_verify off`) because internal backends often use self-signed certs
 - To enable verification for a backend, set `proxy_ssl_verify on` and add `proxy_ssl_trusted_certificate /path/to/backend-ca.pem;` in the relevant vhost
-
-## WebRTC / TURN server
-
-One coturn instance handles media relay for **all** WebRTC backends on this host. TURN operates at the transport layer and is application-agnostic — FreeSWITCH, Janus, Jitsi, custom apps all share the same relay.
-
-### How it works
-
-```
-Client
-  ├─ HTTPS / WebSocket (signaling) ──► nginx ──► backend app
-  └─ DTLS/SRTP media (UDP)         ──► coturn ──► backend media port
-```
-
-coturn uses `network_mode: host` so it can detect its own public IP and bind UDP ports directly without NAT hairpin issues inside Docker.
-
-### Setup
-
-1. Edit `coturn/turnserver.conf`:
-   - Replace `<turn-hostname>` with the domain clients will use (e.g. `turn.example.com`)
-   - Update `realm` to match
-   - Add a cert for that domain: `./scripts/gen-self-signed.sh turn.example.com`
-   - Uncomment and configure `static-auth-secret` (or use a `.env` file)
-
-2. If your backends are on private IPs, add `allowed-peer-ip` entries to override the RFC-1918 deny rules:
-   ```
-   allowed-peer-ip=192.168.1.0-192.168.1.255
-   ```
-
-3. Open firewall ports:
-   | Port | Protocol | Purpose |
-   |------|----------|---------|
-   | 3478 | UDP + TCP | STUN/TURN |
-   | 5349 | UDP + TCP | STUN/TURN over TLS |
-   | 49152–65535 | UDP | RTP media relay range |
-
-### Configuring backends to use this TURN server
-
-Each WebRTC backend/client needs these ICE server settings:
-
-```json
-{
-  "iceServers": [
-    {
-      "urls": "turns:turn.example.com:5349",
-      "username": "<time-limited-token-username>",
-      "credential": "<time-limited-token-credential>"
-    }
-  ]
-}
-```
-
-Time-limited tokens are generated by your backend app using the shared `TURN_SECRET`. Most WebRTC frameworks (Janus, FreeSWITCH, etc.) have built-in support for this.
