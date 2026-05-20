@@ -7,7 +7,7 @@ services:
       - "443:443"
       - "8443:8443"
       - "10.1.10.10:7443:7443"
-      - "10.1.10.11:7443:7443"
+      - "10.1.10.11:7443:7444"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
