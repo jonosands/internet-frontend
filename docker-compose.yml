@@ -1,13 +1,52 @@
 services:
+  # Official MaxMind updater — keeps GeoLite2-Country + GeoLite2-ASN fresh.
+  # Writes the .mmdb files into the shared ./geoip volume; nginx's geoip2
+  # `auto_reload 60m` then picks them up without a reload. With FREQUENCY > 0 it
+  # runs once on start, then loops every N hours (a no-op when nothing is new,
+  # so it won't burn the GeoLite download quota). Credentials come from .env
+  # (same MAXMIND_* vars used by scripts/update-geoip.sh).
+  geoipupdate:
+    image: ghcr.io/maxmind/geoipupdate:v7.1.1
+    container_name: internet-frontend-geoipupdate
+    restart: unless-stopped
+    environment:
+      # From .env (same vars as scripts/update-geoip.sh). If unset, the
+      # geoipupdate container exits with a clear error and nginx never starts.
+      GEOIPUPDATE_ACCOUNT_ID: ${MAXMIND_ACCOUNT_ID}
+      GEOIPUPDATE_LICENSE_KEY: ${MAXMIND_LICENSE_KEY}
+      GEOIPUPDATE_EDITION_IDS: "GeoLite2-Country GeoLite2-ASN"
+      GEOIPUPDATE_FREQUENCY: "${GEOIPUPDATE_FREQUENCY:-24}"  # hours between refreshes
+    volumes:
+      - ./geoip:/usr/share/GeoIP
+    # Healthy once both databases are present, so nginx can wait for the first
+    # download before starting (nginx is fail-closed without them).
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /usr/share/GeoIP/GeoLite2-Country.mmdb && test -f /usr/share/GeoIP/GeoLite2-ASN.mmdb"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
   nginx:
-    image: nginx:stable-alpine
+    # Custom image: stock nginx:stable-alpine + the compiled GeoIP2 module.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: internet-frontend:geoip2
     container_name: internet-frontend
     restart: unless-stopped
     network_mode: host
+    # Wait for the databases to be downloaded before starting (fail-closed).
+    depends_on:
+      geoipupdate:
+        condition: service_healthy
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/snippets:/etc/nginx/snippets:ro
       - ./certs:/etc/nginx/certs:ro
       - ./hosts:/etc/hosts:ro
+      # GeoLite2 databases — populated and refreshed by the geoipupdate service.
+      # nginx fails to start if these are missing (fail-closed).
+      - ./geoip:/etc/nginx/geoip:ro
       - ./logs:/var/log/nginx-custom
