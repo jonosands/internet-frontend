@@ -33,6 +33,10 @@ services:
       context: .
       dockerfile: Dockerfile
     image: internet-frontend:geoip2
+    # Built locally, never pushed to a registry — build it instead of trying to
+    # pull it (otherwise `docker compose pull`/`up` errors with "pull access
+    # denied for internet-frontend").
+    pull_policy: build
     container_name: internet-frontend
     restart: unless-stopped
     network_mode: host
