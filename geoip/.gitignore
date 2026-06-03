@@ -1,0 +1,5 @@
+# GeoLite2 databases are licensed by MaxMind and must not be committed.
+# Populate this directory with scripts/update-geoip.sh.
+*.mmdb
+*.tar.gz
+!.gitignore
