@@ -179,6 +179,12 @@ the same `MAXMIND_*` vars from `.env`.
   credentials are wrong, `geoipupdate` logs an auth error, never becomes
   healthy, and nginx stays down rather than serving without a filter. Check with
   `docker compose logs geoipupdate`.
+- **Fresh-reload:** the **`geoip-reload` sidecar** (`scripts/geoip-reload-watch.sh`)
+  SIGHUPs nginx the moment `geoipupdate` swaps the databases. Without it, nginx's
+  `auto_reload 60m` leaves an up-to-60-min window where it can serve stale geo
+  data (`country=ZZ`) and `444` legitimate NZ/AU users — which the browser shows
+  as `ERR_HTTP2_PROTOCOL_ERROR`. The sidecar comes up with the stack; nothing to
+  install. Check with `docker compose logs geoip-reload`.
 - `geoip2{}` uses `auto_reload 60m;`, so a refreshed database is picked up within
   an hour with no nginx reload. The updater is a no-op when nothing is new, so a
   daily cadence won't burn the GeoLite download quota.

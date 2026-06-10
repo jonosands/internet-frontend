@@ -54,3 +54,21 @@ services:
       # nginx fails to start if these are missing (fail-closed).
       - ./geoip:/etc/nginx/geoip:ro
       - ./logs:/var/log/nginx-custom
+
+  # Forces an immediate nginx reload when geoipupdate swaps the GeoLite2 .mmdb
+  # files. nginx's `auto_reload 60m` alone leaves an up-to-60-min window where it
+  # serves stale geo data (country=ZZ) and 444s legitimate NZ/AU users (seen as
+  # ERR_HTTP2_PROTOCOL_ERROR in the browser). This sidecar shares nginx's PID
+  # namespace and SIGHUPs the master as soon as the Country DB mtime changes.
+  geoip-reload:
+    image: alpine:3.20
+    container_name: internet-frontend-geoip-reload
+    restart: unless-stopped
+    depends_on:
+      nginx:
+        condition: service_started
+    pid: "service:nginx"          # share nginx's PID namespace so we can signal it
+    volumes:
+      - ./geoip:/geoip:ro
+      - ./scripts/geoip-reload-watch.sh:/geoip-reload-watch.sh:ro
+    entrypoint: ["/bin/sh", "/geoip-reload-watch.sh"]
